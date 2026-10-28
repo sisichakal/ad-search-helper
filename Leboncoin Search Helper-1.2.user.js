@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Leboncoin Search Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.5
-// @description  Adds Google, Argus, Caradisiac, La Centrale, Encycarpedia and Google AI search links on Leboncoin car listings
+// @version      2.6
+// @description  Adds Google, Argus, Caradisiac, La Centrale, Encycarpedia and Google AI search links on Leboncoin car listings, plus eBay, Amazon and Google Shopping links on every other listing
 // @author       You
 // @match        https://www.leboncoin.fr/ad/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=leboncoin.fr
@@ -97,6 +97,33 @@
     // Google "udm" parameter value that opens AI Mode instead of the classic results page
     const GOOGLE_AI_MODE_UDM = '50';
 
+    // Google "udm" parameter value that opens the Shopping tab
+    const GOOGLE_SHOPPING_UDM = '28';
+
+    // Marketplaces searched on non-car ads (array order = display order).
+    // Unlike SPEC_SHEET_SOURCES, these hit each site's own search engine
+    // instead of going through Google, so every entry builds its own URL.
+    const PRODUCT_SEARCH_SOURCES = [
+        {
+            badge:   'EB',
+            colour:  '#e53238',
+            tooltip: 'Rechercher sur eBay.fr',
+            buildUrl: query => `https://www.ebay.fr/sch/i.html?${new URLSearchParams({ _nkw: query }).toString()}`,
+        },
+        {
+            badge:   'AM',
+            colour:  '#ff9900',
+            tooltip: 'Rechercher sur Amazon.fr',
+            buildUrl: query => `https://www.amazon.fr/s?${new URLSearchParams({ k: query }).toString()}`,
+        },
+        {
+            badge:   'GS',
+            colour:  '#4285f4',
+            tooltip: 'Rechercher sur Google Shopping',
+            buildUrl: query => `https://www.google.com/search?${new URLSearchParams({ q: query, udm: GOOGLE_SHOPPING_UDM }).toString()}`,
+        },
+    ];
+
     const SPARKLE_PATH = 'M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z';
 
     // Remove blacklisted strings from a value before adding it to the query
@@ -158,13 +185,18 @@
         return badge;
     }
 
+    // Open any URL in a new tab
+    function openInNewTab(url) {
+        window.open(url, '_blank', 'noopener');
+    }
+
     // Open a Google search in a new tab (classic results or AI Mode)
     function openGoogleSearch(query, aiMode = false) {
         const params = new URLSearchParams({ q: query });
         if (aiMode) {
             params.set('udm', GOOGLE_AI_MODE_UDM);
         }
-        window.open(`https://www.google.com/search?${params.toString()}`, '_blank', 'noopener');
+        openInNewTab(`https://www.google.com/search?${params.toString()}`);
     }
 
     // Attach a click handler that blocks the default Leboncoin behaviour
@@ -314,6 +346,20 @@
         return icon;
     }
 
+    // Create a marketplace search icon (eBay, Amazon, Google Shopping).
+    // The ad title is used as-is: no car criteria to enrich it with here.
+    function createProductSearchIcon(source, title) {
+        const icon = createTextBadge(source.badge, source.colour);
+        icon.title = source.tooltip;
+
+        bindClick(icon, function() {
+            const query = sanitiseQueryPart(title);
+            console.log(`[SearchHelper] ${source.tooltip}:`, query);
+            openInNewTab(source.buildUrl(query));
+        });
+        return icon;
+    }
+
     // Create the Google AI Mode button returning a technical table
     function createAiButton(title) {
         const button = document.createElement('button');
@@ -400,6 +446,9 @@
                 container.appendChild(createAiButton(adTitle));
             } else {
                 container.appendChild(createGoogleIcon(adTitle));
+                for (const source of PRODUCT_SEARCH_SOURCES) {
+                    container.appendChild(createProductSearchIcon(source, adTitle));
+                }
             }
 
             titleElement.insertBefore(container, titleElement.firstChild);
