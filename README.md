@@ -2,7 +2,7 @@
 
 A userscript that adds one-click price-comparison and spec-sheet shortcuts to [leboncoin.fr](https://www.leboncoin.fr), directly next to listing titles.
 
-[![Userscript](https://img.shields.io/badge/userscript-v2.7-blue)](Leboncoin%20Search%20Helper-1.2.user.js)
+[![Userscript](https://img.shields.io/badge/userscript-v2.7-blue)](leboncoin-search-helper.user.js)
 [![License: MPL 2.0](https://img.shields.io/badge/license-MPL%202.0-brightgreen)](LICENSE)
 [![No dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)](#how-it-works)
 
@@ -50,7 +50,7 @@ Both sets work on individual listing pages **and** on search results, where ever
 ## Installation
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) for your browser.
-2. Open [`Leboncoin Search Helper-1.2.user.js`](Leboncoin%20Search%20Helper-1.2.user.js) and click **Raw**.
+2. Open [`leboncoin-search-helper.user.js`](leboncoin-search-helper.user.js) and click **Raw**.
 
 Tampermonkey picks up the install prompt automatically. Updates are served through `@updateURL`, so later versions are offered without reinstalling.
 

@@ -7,8 +7,8 @@
 // @match        https://www.leboncoin.fr/ad/*
 // @match        https://www.leboncoin.fr/recherche*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=leboncoin.fr
-// @updateURL    https://raw.githubusercontent.com/sisichakal/Leboncoin-Search-Helper/main/Leboncoin%20Search%20Helper-1.2.user.js
-// @downloadURL  https://raw.githubusercontent.com/sisichakal/Leboncoin-Search-Helper/main/Leboncoin%20Search%20Helper-1.2.user.js
+// @updateURL    https://raw.githubusercontent.com/sisichakal/Leboncoin-Search-Helper/main/leboncoin-search-helper.user.js
+// @downloadURL  https://raw.githubusercontent.com/sisichakal/Leboncoin-Search-Helper/main/leboncoin-search-helper.user.js
 // @grant        none
 // ==/UserScript==
 
