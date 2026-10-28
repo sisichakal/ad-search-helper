@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Leboncoin Search Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.6
-// @description  Adds Google, Argus, Caradisiac, La Centrale, Encycarpedia and Google AI search links on Leboncoin car listings, plus eBay, Amazon and Google Shopping links on every other listing
+// @version      2.7
+// @description  Adds Google, Argus, Caradisiac, La Centrale, Encycarpedia and Google AI search links on Leboncoin car listings, plus eBay, Amazon and Google Shopping links on every other listing, on ad pages and search results alike
 // @author       You
 // @match        https://www.leboncoin.fr/ad/*
+// @match        https://www.leboncoin.fr/recherche*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=leboncoin.fr
 // @updateURL    https://raw.githubusercontent.com/sisichakal/Leboncoin-Search-Helper/main/Leboncoin%20Search%20Helper-1.2.user.js
 // @downloadURL  https://raw.githubusercontent.com/sisichakal/Leboncoin-Search-Helper/main/Leboncoin%20Search%20Helper-1.2.user.js
@@ -30,6 +31,9 @@
         /\bct\s+ok\b/i,
         /garantie\s+\d+\s*mois/i,
         /très\s+bon\s+état/i,
+        /\bsous\s+blister\b/i,
+        /\burgent\b/i,
+        /\bneuf\b/i,
     ];
 
     // Selectors used to locate the ad title, most specific first
@@ -398,7 +402,7 @@
             'm15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4m-5-4l5-5-5-5m-5 9h11',
             '#4285f4'
         );
-        bindClick(icon, () => openGoogleSearch(title));
+        bindClick(icon, () => openGoogleSearch(sanitiseQueryPart(title)));
         icon.title = 'Rechercher sur Google';
         return icon;
     }
@@ -406,6 +410,96 @@
     // Check whether icons have already been injected
     function iconsAlreadyExist() {
         return document.querySelector('.search-helper-icon') !== null;
+    }
+
+    // ---------------------------------------------------------------------
+    // Search results page
+    //
+    // Card markup:
+    //   <article aria-label="full, untruncated title">
+    //     <div data-qa-id="aditem_container" class="relative group/adcard">
+    //       <a class="absolute inset-0" href="/ad/<category>/<id>">  <- covers the card
+    //       <div> … <p class="text-body-1-highlight">title</p> … </div>
+    // ---------------------------------------------------------------------
+
+    const CARD_SELECTOR       = '[data-qa-id="aditem_container"]';
+    const CARD_TITLE_SELECTOR = 'p.text-body-1-highlight';
+
+    function isSearchPage() {
+        return window.location.pathname.startsWith('/recherche');
+    }
+
+    // The <article> carries the full title, so prefer it over the <p>,
+    // which the card layout may visually truncate.
+    function getCardTitle(card) {
+        const article = card.closest('article');
+        const label   = article && article.getAttribute('aria-label');
+        if (label && label.trim()) {
+            return label.trim();
+        }
+        const p = card.querySelector(CARD_TITLE_SELECTOR);
+        return p ? p.textContent.trim() : null;
+    }
+
+    // Car listings are recognised by their /ad/voitures/ link
+    function isCarCard(card) {
+        const link = card.querySelector('a[href*="/ad/"]');
+        return Boolean(link) && link.getAttribute('href').includes('/voitures/');
+    }
+
+    // Inject the icons into a single result card (no-op if already done)
+    function addIconsToCard(card) {
+        if (card.dataset.searchHelperDone) {
+            return;
+        }
+        const title = getCardTitle(card);
+        if (!title) {
+            return;
+        }
+        card.dataset.searchHelperDone = '1';
+
+        const container = document.createElement('span');
+        container.className = 'search-helper-icon';
+        // The card is fully covered by an <a class="absolute inset-0">.
+        // Without an explicit stacking context the badges sit underneath it
+        // and every click would open the listing instead.
+        container.style.cssText = [
+            'display:inline-flex',
+            'align-items:center',
+            'vertical-align:middle',
+            'position:relative',
+            'z-index:2',
+            'margin-right:6px',
+        ].join(';');
+
+        if (isCarCard(card)) {
+            for (const source of SPEC_SHEET_SOURCES) {
+                container.appendChild(createSpecSheetIcon(source, title));
+            }
+        } else {
+            container.appendChild(createGoogleIcon(title));
+            for (const source of PRODUCT_SEARCH_SOURCES) {
+                container.appendChild(createProductSearchIcon(source, title));
+            }
+        }
+
+        // Badges carry a left margin meant to follow the ad title; the first
+        // one sits at the start of the line here, so drop it.
+        if (container.firstChild) {
+            container.firstChild.style.marginLeft = '0';
+        }
+
+        const anchor = card.querySelector(CARD_TITLE_SELECTOR) || card;
+        anchor.insertBefore(container, anchor.firstChild);
+    }
+
+    // Inject into every card currently in the DOM, returning how many were found
+    function addSearchPageIcons() {
+        const cards = document.querySelectorAll(CARD_SELECTOR);
+        for (const card of cards) {
+            addIconsToCard(card);
+        }
+        return cards.length;
     }
 
     // Main injection function
@@ -458,16 +552,24 @@
         }
     }
 
-    // Retry loop until the title is available
+    // Retry loop until the ad title (ad page) or the first card (results page) shows up
     function initScript() {
         let attempts = 0;
         const maxAttempts = 15;
 
         function tryInject() {
             attempts++;
-            if (getTitleElement() && getAdTitle()) {
+
+            if (isSearchPage()) {
+                if (addSearchPageIcons() > 0) {
+                    return;
+                }
+            } else if (getTitleElement() && getAdTitle()) {
                 addSearchIcons();
-            } else if (attempts < maxAttempts) {
+                return;
+            }
+
+            if (attempts < maxAttempts) {
                 setTimeout(tryInject, 800);
             } else {
                 console.log('[SearchHelper] Giving up after', maxAttempts, 'attempts.');
@@ -487,7 +589,17 @@
                 break;
             }
         }
-        if (hasNewNodes && !iconsAlreadyExist() && !injecting) {
+        if (!hasNewNodes) {
+            return;
+        }
+
+        // On the results page new cards keep arriving (pagination, filters,
+        // infinite scroll), so re-scan every time: cards already handled carry
+        // a dataset flag and are skipped, which keeps this cheap.
+        if (isSearchPage()) {
+            clearTimeout(observerTimer);
+            observerTimer = setTimeout(addSearchPageIcons, 400);
+        } else if (!iconsAlreadyExist() && !injecting) {
             clearTimeout(observerTimer);
             observerTimer = setTimeout(addSearchIcons, 600);
         }
