@@ -1,30 +1,29 @@
 // ==UserScript==
-// @name         Leboncoin Search Helper
+// @name         Ad Search Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.8
-// @description  Adds Google, Argus, Caradisiac, La Centrale, Encycarpedia and Google AI search links on Leboncoin car listings, plus eBay, Amazon and Google Shopping links on every other listing, on ad pages and search results alike
+// @version      3.0
+// @description  Ajoute des raccourcis de recherche sur les annonces Leboncoin et La Centrale : fiches techniques, Google AI Mode, eBay, Amazon et Google Shopping
 // @author       You
 // @match        https://www.leboncoin.fr/ad/*
 // @match        https://www.leboncoin.fr/recherche*
+// @match        https://www.lacentrale.fr/auto-occasion-annonce-*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=leboncoin.fr
-// @updateURL    https://raw.githubusercontent.com/sisichakal/Leboncoin-Search-Helper/main/leboncoin-search-helper.user.js
-// @downloadURL  https://raw.githubusercontent.com/sisichakal/Leboncoin-Search-Helper/main/leboncoin-search-helper.user.js
+// @updateURL    https://raw.githubusercontent.com/sisichakal/ad-search-helper/main/ad-search-helper.user.js
+// @downloadURL  https://raw.githubusercontent.com/sisichakal/ad-search-helper/main/ad-search-helper.user.js
 // @grant        none
 // ==/UserScript==
 
+//
+// One script, two classified-ad sites.
+//
+// Both do the same job: read a listing, build an enriched query from it, and
+// open the searches that help judge the asking price. Everything outside the
+// SITE ADAPTERS section is shared — an adapter only says where its site keeps
+// the title and the criteria, and which badges belong there.
+//
+
 (function() {
     'use strict';
-
-    // Criteria to extract: data-qa-id => value is in the SECOND column of the flex row
-    const CAR_CRITERIA_IDS = [
-        'criteria_item_u_car_model',
-        'criteria_item_regdate',
-        'criteria_item_gearbox',
-        'criteria_item_u_car_finition',
-        'criteria_item_u_car_version',
-        'criteria_item_horsepower',
-        'criteria_item_horse_power_din',
-    ];
 
     // Patterns to strip from any query part (case-insensitive)
     const QUERY_BLACKLIST = [
@@ -34,16 +33,6 @@
         /\bsous\s+blister\b/i,
         /\burgent\b/i,
         /\bneuf\b/i,
-    ];
-
-    // Selectors used to locate the ad title, most specific first
-    const TITLE_SELECTORS = [
-        'h1[data-testid="ad-title"]',
-        'h1[data-test-id="ad-title"]',
-        'h1.text-headline-1',
-        'h1.text-title-1',
-        'h1._1KQme',
-        'h1',
     ];
 
     // Spec-sheet search sources displayed on car ads (array order = display order).
@@ -185,6 +174,166 @@
         return result.replace(/\s{2,}/g, ' ').trim();
     }
 
+    // =====================================================================
+    // SITE ADAPTERS
+    // =====================================================================
+
+    const LEBONCOIN = {
+        key:  'leboncoin',
+        host: 'leboncoin.fr',
+
+        // Where the badges go, and where the query text comes from
+        titleSelectors: [
+            'h1[data-testid="ad-title"]',
+            'h1[data-test-id="ad-title"]',
+            'h1.text-headline-1',
+            'h1.text-title-1',
+            'h1._1KQme',
+            'h1',
+        ],
+
+        // Leboncoin sells everything, so the category decides the badges
+        isCarAd() {
+            if (window.location.href.includes('/voitures/')) {
+                return true;
+            }
+            for (const item of document.querySelectorAll('[data-testid="breadcrumb-item"]')) {
+                if (item.textContent.toLowerCase().includes('voitures')) {
+                    return true;
+                }
+            }
+            return false;
+        },
+
+        // Non-car ads are consumer goods, worth pricing against marketplaces
+        showMarketplaces: true,
+
+        // "Voir les X critères supplémentaires" hides half of them
+        expandCriteria() {
+            const btn = document.querySelector('button[data-qa-id="criteria_more"]');
+            if (!btn || btn.textContent.trim().toLowerCase().startsWith('voir moins')) {
+                return Promise.resolve();
+            }
+            return new Promise((resolve) => {
+                btn.click();
+                setTimeout(resolve, 700);
+            });
+        },
+
+        // Each criteria block holds a label column then a value column
+        criteriaValues() {
+            const ids = [
+                'criteria_item_u_car_model',
+                'criteria_item_regdate',
+                'criteria_item_gearbox',
+                'criteria_item_u_car_finition',
+                'criteria_item_u_car_version',
+                'criteria_item_horsepower',
+                'criteria_item_horse_power_din',
+            ];
+            const values = [];
+            for (const id of ids) {
+                const container = document.querySelector(`[data-qa-id="${id}"]`);
+                if (!container || container.children.length < 2) {
+                    continue;
+                }
+                const valueColumn = container.children[1];
+                // The title attribute carries the full text when the layout
+                // truncates it on screen
+                const titled = valueColumn.querySelector('p[title]');
+                const raw = titled
+                    ? titled.getAttribute('title').trim()
+                    : valueColumn.textContent.trim();
+                if (raw) {
+                    values.push(raw);
+                }
+            }
+            return values;
+        },
+
+        // --- search results ---
+        hasSearchPage:     true,
+        isSearchPage:      () => window.location.pathname.startsWith('/recherche'),
+        cardSelector:      '[data-qa-id="aditem_container"]',
+        cardTitleSelector: 'p.text-body-1-highlight',
+
+        // The <article> carries the full title, so prefer it over the <p>,
+        // which the card layout may visually truncate.
+        getCardTitle(card) {
+            const article = card.closest('article');
+            const label   = article && article.getAttribute('aria-label');
+            if (label && label.trim()) {
+                return label.trim();
+            }
+            const p = card.querySelector(this.cardTitleSelector);
+            return p ? p.textContent.trim() : null;
+        },
+
+        isCarCard(card) {
+            const link = card.querySelector('a[href*="/ad/"]');
+            return Boolean(link) && link.getAttribute('href').includes('/voitures/');
+        },
+    };
+
+    const LA_CENTRALE = {
+        key:  'lacentrale',
+        host: 'lacentrale.fr',
+
+        // Badges are inserted in the ad heading…
+        titleSelectors: [
+            'h1.AdTitle',
+            'h1[data-qa-id="adview-title"]',
+            '.AdTitle h1',
+            'h1.titleAd',
+            'h1',
+        ],
+
+        // …but the make/model/version line is a cleaner query than the heading
+        queryTitleSelectors: ['[class*="GeneralInformation_makeModelVersion"]'],
+
+        // Headings end with the ad reference, which is noise in a search
+        cleanTitle: text => text.replace(/\s+\d{4,}$/, ''),
+
+        // The site only sells cars
+        isCarAd:          () => true,
+        showMarketplaces: false,
+        expandCriteria:   () => Promise.resolve(),
+
+        // Label/value pairs with hashed CSS-module class names. Matching on a
+        // fragment survives the rebuilds that change those hashes.
+        criteriaValues() {
+            const wanted = [
+                'année', 'énergie', 'boîte', 'transmission',
+                'puissance din', 'puissance fiscale',
+            ];
+            const values = [];
+            for (const line of document.querySelectorAll('[class*="LabelItems_gridLine"]')) {
+                const labelEl = line.querySelector('[class*="LabelItems_itemLabelName"]');
+                const valueEl = line.querySelector('[class*="LabelItems_itemValue"]');
+                if (!labelEl || !valueEl) {
+                    continue;
+                }
+                const label = labelEl.textContent.trim().toLowerCase();
+                if (wanted.some(w => label.includes(w))) {
+                    const raw = valueEl.textContent.trim();
+                    if (raw) {
+                        values.push(raw);
+                    }
+                }
+            }
+            return values;
+        },
+
+        hasSearchPage: false,
+    };
+
+    const SITES = [LEBONCOIN, LA_CENTRALE];
+
+    const site = SITES.find(s => window.location.hostname.endsWith(s.host));
+    if (!site) {
+        return;
+    }
+
     // Flag to prevent concurrent injection attempts
     let injecting = false;
 
@@ -257,23 +406,9 @@
         });
     }
 
-    // Check whether the current listing is a car ad
-    function isCarAd() {
-        if (window.location.href.includes('/voitures/')) {
-            return true;
-        }
-        const breadcrumbItems = document.querySelectorAll('[data-testid="breadcrumb-item"]');
-        for (const item of breadcrumbItems) {
-            if (item.textContent.toLowerCase().includes('voitures')) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // Find the title DOM element
-    function getTitleElement() {
-        for (const sel of TITLE_SELECTORS) {
+    // First element matching any selector and holding some text
+    function firstMatching(selectors) {
+        for (const sel of selectors) {
             const el = document.querySelector(sel);
             if (el && el.textContent.trim()) {
                 return el;
@@ -282,57 +417,21 @@
         return null;
     }
 
-    // Extract the ad title text
+    // Where the badges are inserted
+    function getTitleElement() {
+        return firstMatching(site.titleSelectors);
+    }
+
+    // The text the query is built from. Some sites publish a cleaner model
+    // line than the heading they show at the top of the page.
     function getAdTitle() {
-        const el = getTitleElement();
-        return el ? el.textContent.trim() : null;
-    }
-
-    // Extract the VALUE (right column) from a criteria block by its data-qa-id.
-    // Structure: [data-qa-id="..."] contains two flex children:
-    //   - first child  = label column  (icon + <p class="text-caption">Label</p>)
-    //   - second child = value column  (<div> containing <p class="font-bold" title="VALUE">VALUE</p>)
-    function extractCriteriaValue(qaId) {
-        const container = document.querySelector(`[data-qa-id="${qaId}"]`);
-        if (!container) {
+        const source = (site.queryTitleSelectors && firstMatching(site.queryTitleSelectors))
+            || getTitleElement();
+        if (!source) {
             return null;
         }
-
-        // The value column is the second direct child of the flex container
-        const children = container.children;
-        if (children.length < 2) {
-            return null;
-        }
-
-        const valueColumn = children[1];
-
-        // Prefer title attribute on any <p> (handles truncated text)
-        const boldP = valueColumn.querySelector('p[title]');
-        if (boldP) {
-            const title = boldP.getAttribute('title').trim();
-            if (title) {
-                return title;
-            }
-        }
-
-        // Fallback: raw text content of the value column
-        const text = valueColumn.textContent.trim();
-        return text || null;
-    }
-
-    // Click "Voir les X critères supplémentaires" if not yet expanded
-    function expandCriteriaIfNeeded() {
-        const btn = document.querySelector('button[data-qa-id="criteria_more"]');
-        if (!btn) {
-            return Promise.resolve();
-        }
-        if (btn.textContent.trim().toLowerCase().startsWith('voir moins')) {
-            return Promise.resolve();
-        }
-        return new Promise((resolve) => {
-            btn.click();
-            setTimeout(resolve, 700);
-        });
+        const text = source.textContent.trim();
+        return site.cleanTitle ? site.cleanTitle(text) : text;
     }
 
     // Check whether a value is already present in the title
@@ -347,17 +446,12 @@
         );
     }
 
-    // Build the enriched query from title + extracted criteria values
+    // Build the enriched query from the title plus whatever criteria the
+    // adapter could read off the page, skipping anything the title already says
     function buildEnrichedQuery(title) {
-        // Sanitise the title itself first
         const cleanTitle = sanitiseQueryPart(title);
         const extras = [];
-        for (const qaId of CAR_CRITERIA_IDS) {
-            const raw = extractCriteriaValue(qaId);
-            console.log(`[SearchHelper] ${qaId} =>`, raw);
-            if (!raw) {
-                continue;
-            }
+        for (const raw of site.criteriaValues()) {
             const value = sanitiseQueryPart(raw);
             if (value && !isDataInTitle(value, cleanTitle)) {
                 extras.push(value);
@@ -467,29 +561,9 @@
     //       <div> … <p class="text-body-1-highlight">title</p> … </div>
     // ---------------------------------------------------------------------
 
-    const CARD_SELECTOR       = '[data-qa-id="aditem_container"]';
-    const CARD_TITLE_SELECTOR = 'p.text-body-1-highlight';
-
+    // Only Leboncoin exposes a results page today; La Centrale opts out
     function isSearchPage() {
-        return window.location.pathname.startsWith('/recherche');
-    }
-
-    // The <article> carries the full title, so prefer it over the <p>,
-    // which the card layout may visually truncate.
-    function getCardTitle(card) {
-        const article = card.closest('article');
-        const label   = article && article.getAttribute('aria-label');
-        if (label && label.trim()) {
-            return label.trim();
-        }
-        const p = card.querySelector(CARD_TITLE_SELECTOR);
-        return p ? p.textContent.trim() : null;
-    }
-
-    // Car listings are recognised by their /ad/voitures/ link
-    function isCarCard(card) {
-        const link = card.querySelector('a[href*="/ad/"]');
-        return Boolean(link) && link.getAttribute('href').includes('/voitures/');
+        return Boolean(site.hasSearchPage) && site.isSearchPage();
     }
 
     // Inject the icons into a single result card (no-op if already done)
@@ -497,7 +571,7 @@
         if (card.dataset.searchHelperDone) {
             return;
         }
-        const title = getCardTitle(card);
+        const title = site.getCardTitle(card);
         if (!title) {
             return;
         }
@@ -517,14 +591,16 @@
             'margin-right:6px',
         ].join(';');
 
-        if (isCarCard(card)) {
+        if (site.isCarCard(card)) {
             for (const source of SPEC_SHEET_SOURCES) {
                 container.appendChild(createSpecSheetIcon(source, title));
             }
         } else {
             container.appendChild(createGoogleIcon(title));
-            for (const source of PRODUCT_SEARCH_SOURCES) {
-                container.appendChild(createProductSearchIcon(source, title));
+            if (site.showMarketplaces) {
+                for (const source of PRODUCT_SEARCH_SOURCES) {
+                    container.appendChild(createProductSearchIcon(source, title));
+                }
             }
         }
 
@@ -534,13 +610,13 @@
             container.firstChild.style.marginLeft = '0';
         }
 
-        const anchor = card.querySelector(CARD_TITLE_SELECTOR) || card;
+        const anchor = card.querySelector(site.cardTitleSelector) || card;
         anchor.insertBefore(container, anchor.firstChild);
     }
 
     // Inject into every card currently in the DOM, returning how many were found
     function addSearchPageIcons() {
-        const cards = document.querySelectorAll(CARD_SELECTOR);
+        const cards = document.querySelectorAll(site.cardSelector);
         for (const card of cards) {
             addIconsToCard(card);
         }
@@ -563,10 +639,10 @@
                 return;
             }
 
-            const carAd = isCarAd();
+            const carAd = site.isCarAd();
 
             if (carAd) {
-                await expandCriteriaIfNeeded();
+                await site.expandCriteria();
             }
 
             // Double-check after async wait — another call may have injected in the meantime
@@ -585,8 +661,10 @@
                 container.appendChild(createAiButton(adTitle));
             } else {
                 container.appendChild(createGoogleIcon(adTitle));
-                for (const source of PRODUCT_SEARCH_SOURCES) {
-                    container.appendChild(createProductSearchIcon(source, adTitle));
+                if (site.showMarketplaces) {
+                    for (const source of PRODUCT_SEARCH_SOURCES) {
+                        container.appendChild(createProductSearchIcon(source, adTitle));
+                    }
                 }
             }
 
