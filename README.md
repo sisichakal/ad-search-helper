@@ -125,8 +125,8 @@ Optional: `queryTitleSelectors` when the page carries a cleaner model line than 
 
 Supersedes two scripts that read a listing and built a search query from it in the same way:
 
-- `Leboncoin-Search-Helper` — this repository, up to v2.8
-- `La-Centrale-Search-Helper` — archived, up to v1.1
+- `Leboncoin-Search-Helper` — this repository, renamed, up to v2.8
+- `La-Centrale-Search-Helper` — merged in, repository removed
 
 La Centrale gained the four spec-sheet badges and the AI button in the merge, having previously offered a single hardcoded Argus link.
 
