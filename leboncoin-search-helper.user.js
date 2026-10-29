@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Leboncoin Search Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.7
+// @version      2.8
 // @description  Adds Google, Argus, Caradisiac, La Centrale, Encycarpedia and Google AI search links on Leboncoin car listings, plus eBay, Amazon and Google Shopping links on every other listing, on ad pages and search results alike
 // @author       You
 // @match        https://www.leboncoin.fr/ad/*
@@ -130,12 +130,57 @@
 
     const SPARKLE_PATH = 'M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z';
 
-    // Remove blacklisted strings from a value before adding it to the query
+    // Strip diacritics: "très bon état" -> "tres bon etat".
+    // Precomposed French letters collapse to a single base letter, so offsets in
+    // the result still line up with the original string.
+    function deaccent(value) {
+        return value.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    }
+
+    // Remove blacklisted strings from a value before adding it to the query.
+    // Matching ignores accents, because plenty of sellers type "tres bon etat",
+    // while the text that survives keeps its original spelling.
     function sanitiseQueryPart(value) {
+        const plain = deaccent(value);
         let result = value;
-        for (const pattern of QUERY_BLACKLIST) {
-            result = result.replace(pattern, '');
+
+        if (plain.length === value.length) {
+            // Collect every match on the accent-free form, then splice the
+            // matching ranges out of the original.
+            const cuts = [];
+            for (const pattern of QUERY_BLACKLIST) {
+                const flags = pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g';
+                const rx = new RegExp(deaccent(pattern.source), flags);
+                let match;
+                while ((match = rx.exec(plain)) !== null) {
+                    if (match[0].length === 0) {
+                        rx.lastIndex++;
+                        continue;
+                    }
+                    cuts.push([match.index, match.index + match[0].length]);
+                }
+            }
+
+            // Splice from the end so earlier offsets stay valid, skipping any
+            // range that overlaps a cut already made.
+            cuts.sort((a, b) => b[0] - a[0]);
+            let lastStart = Infinity;
+            for (const [start, end] of cuts) {
+                if (end > lastStart) {
+                    continue;
+                }
+                result = `${result.slice(0, start)} ${result.slice(end)}`;
+                lastStart = start;
+            }
+        } else {
+            // Already-decomposed input: offsets cannot be trusted, so filter the
+            // accent-free form and return that instead.
+            result = plain;
+            for (const pattern of QUERY_BLACKLIST) {
+                result = result.replace(new RegExp(deaccent(pattern.source), pattern.flags), '');
+            }
         }
+
         // Collapse multiple spaces left by removals
         return result.replace(/\s{2,}/g, ' ').trim();
     }
