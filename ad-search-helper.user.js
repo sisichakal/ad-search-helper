@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ad Search Helper
 // @namespace    http://tampermonkey.net/
-// @version      3.0
-// @description  Ajoute des raccourcis de recherche sur les annonces Leboncoin et La Centrale : fiches techniques, Google AI Mode, eBay, Amazon et Google Shopping
+// @version      3.1
+// @description  Ajoute des raccourcis de recherche sur les annonces Leboncoin et La Centrale : fiches techniques, Google AI Mode, Claude, ChatGPT, eBay, Amazon et Google Shopping
 // @author       You
 // @match        https://www.leboncoin.fr/ad/*
 // @match        https://www.leboncoin.fr/recherche*
@@ -67,12 +67,8 @@
     // Colour scale shared with the "Informations Techniques" panel (rendered as emoji dots by the AI)
     const AI_COLOUR_LEGEND = '🟢 bon, 🟠 moyen, 🔴 mauvais, ⚫ très mauvais, ⚪ N/A ou sans seuil';
 
-    // Thresholds shared by the three fuel consumption rows (fuel - electric)
-    const CONSUMPTION_COLOURS = '🟢 ≤5 L et ≤15 kWh ; 🟠 ≤6.5 L et ≤18 kWh ; 🔴 ≤8 L et ≤22 kWh ; ⚫ au-delà';
-
-    // Rows requested from Google AI Mode (same layout and colour rules as the "Informations Techniques" panel).
-    // Adjust the thresholds in "colours" to match the panel exactly.
-    const AI_TABLE_ROWS = [
+    // Rows that mean the same thing whatever drives the wheels
+    const AI_COMMON_ROWS = [
         { label: 'Longueur / Largeur',              format: '4.42m - 1.83m',          colours: '🟢 L≤4.30m et l≤1.78m ; 🟠 L≤4.40m et l≤1.80m ; 🔴 L≤4.60m ; ⚫ au-delà' },
         { label: 'Poids à vide',                    format: '1250 kg',                colours: '🟢 ≤1300 ; 🟠 ≤1500 ; 🔴 ≤1700 ; ⚫ >1700' },
         { label: 'Volume de coffre + volume utile', format: '475L - 1600L (banquette rabattue)', colours: '🟢 coffre ≥450L ; 🟠 ≥380L ; 🔴 ≥300L ; ⚫ <300L' },
@@ -80,12 +76,54 @@
         { label: 'Puissance réelle maxi',           format: '204 ch',                 colours: '🟢 ≥150 ; 🟠 ≥120 ; 🔴 ≥90 ; ⚫ <90' },
         { label: 'Vitesse maximale',                format: '167 km/h',               colours: '🟢 ≥190 ; 🟠 ≥180 ; 🔴 ≥170 ; ⚫ <170' },
         { label: '0 à 100 km/h',                    format: '8.5 s',                  colours: '🟢 ≤8 ; 🟠 ≤10 ; 🔴 ≤12 ; ⚫ >12' },
-        { label: 'Conso Urbain',                    format: '5.2 L/100 km - 16 kWh/100 km', colours: CONSUMPTION_COLOURS },
-        { label: 'Conso Mixte',                     format: '5.2 L/100 km - 16 kWh/100 km', colours: CONSUMPTION_COLOURS },
-        { label: 'Conso Extra',                     format: '5.2 L/100 km - 16 kWh/100 km', colours: CONSUMPTION_COLOURS },
-        { label: 'Réservoir',                       format: '45 L',                   colours: '🟢 ≥50 ; 🟠 ≥40 ; 🔴 ≥30 ; ⚫ <30' },
-        { label: 'Architecture',                    format: 'type de motorisation / de moteur électrique', colours: '⚪ toujours' },
     ];
+
+    const FUEL_COLOURS     = '🟢 ≤5 L ; 🟠 ≤6.5 L ; 🔴 ≤8 L ; ⚫ au-delà';
+    const ELECTRIC_COLOURS = '🟢 ≤15 kWh ; 🟠 ≤18 kWh ; 🔴 ≤22 kWh ; ⚫ au-delà';
+    const BOTH_COLOURS     = '🟢 ≤5 L et ≤15 kWh ; 🟠 ≤6.5 L et ≤18 kWh ; 🔴 ≤8 L et ≤22 kWh ; ⚫ au-delà';
+
+    // Litres and kilowatt-hours have nothing to do with each other, and a tank
+    // is meaningless on an electric car, so the energy rows swap out entirely
+    // with the powertrain. Asking an EV for L/100 km only invites the model to
+    // make a number up.
+    const AI_ENERGY_ROWS = {
+        thermal: [
+            { label: 'Conso Urbain',              format: '5.2 L/100 km', colours: FUEL_COLOURS },
+            { label: 'Conso Mixte',               format: '5.2 L/100 km', colours: FUEL_COLOURS },
+            { label: 'Conso Extra',               format: '5.2 L/100 km', colours: FUEL_COLOURS },
+            { label: 'Réservoir',                 format: '45 L',         colours: '🟢 ≥50 ; 🟠 ≥40 ; 🔴 ≥30 ; ⚫ <30' },
+            { label: 'Autonomie (réservoir plein, cycle mixte)', format: '865 km', colours: '🟢 ≥800 ; 🟠 ≥650 ; 🔴 ≥500 ; ⚫ <500' },
+        ],
+        electric: [
+            { label: 'Conso Urbain',              format: '14 kWh/100 km', colours: ELECTRIC_COLOURS },
+            { label: 'Conso Mixte',               format: '16 kWh/100 km', colours: ELECTRIC_COLOURS },
+            { label: 'Conso Autoroute',           format: '21 kWh/100 km', colours: ELECTRIC_COLOURS },
+            { label: 'Batterie (capacité utile)', format: '58 kWh',        colours: '🟢 ≥70 ; 🟠 ≥55 ; 🔴 ≥40 ; ⚫ <40' },
+            { label: 'Autonomie WLTP',            format: '420 km',        colours: '🟢 ≥450 ; 🟠 ≥350 ; 🔴 ≥250 ; ⚫ <250' },
+            { label: 'Charge rapide DC max',      format: '150 kW',        colours: '🟢 ≥150 ; 🟠 ≥100 ; 🔴 ≥50 ; ⚫ <50' },
+        ],
+        hybrid: [
+            { label: 'Conso Urbain',              format: '5.2 L/100 km - 16 kWh/100 km', colours: BOTH_COLOURS },
+            { label: 'Conso Mixte',               format: '5.2 L/100 km - 16 kWh/100 km', colours: BOTH_COLOURS },
+            { label: 'Conso Extra',               format: '5.2 L/100 km - 16 kWh/100 km', colours: BOTH_COLOURS },
+            { label: 'Réservoir',                 format: '45 L',   colours: '🟢 ≥50 ; 🟠 ≥40 ; 🔴 ≥30 ; ⚫ <30' },
+            { label: 'Batterie (capacité utile)', format: '13 kWh', colours: '⚪ toujours' },
+            { label: 'Autonomie électrique WLTP', format: '65 km',  colours: '🟢 ≥60 ; 🟠 ≥45 ; 🔴 ≥25 ; ⚫ <25' },
+        ],
+        // The listing did not say how the car is powered: let the model decide,
+        // rather than print a unit that cannot apply.
+        unknown: [
+            { label: 'Conso Urbain', format: '5.2 L/100 km ou 14 kWh/100 km selon la motorisation', colours: BOTH_COLOURS },
+            { label: 'Conso Mixte',  format: '5.2 L/100 km ou 16 kWh/100 km selon la motorisation', colours: BOTH_COLOURS },
+            { label: 'Conso Extra',  format: '5.2 L/100 km ou 21 kWh/100 km selon la motorisation', colours: BOTH_COLOURS },
+            { label: 'Réservoir ou batterie (selon la motorisation)', format: '45 L ou 58 kWh', colours: '⚪ toujours' },
+            { label: 'Autonomie',    format: '865 km', colours: '⚪ toujours' },
+        ],
+    };
+
+    const AI_ARCHITECTURE_ROW = {
+        label: 'Architecture', format: 'type de motorisation / de moteur électrique', colours: '⚪ toujours',
+    };
 
     // Google "udm" parameter value that opens AI Mode instead of the classic results page
     const GOOGLE_AI_MODE_UDM = '50';
@@ -117,7 +155,31 @@
         },
     ];
 
-    const SPARKLE_PATH = 'M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z';
+    // Assistants the technical-sheet prompt can be sent to. Each gets its own
+    // pill-shaped button; the prompt itself is identical, only the destination
+    // changes, so adding one is a single entry.
+    const AI_SOURCES = [
+        {
+            label:   'Fiche IA',
+            colour:  '#8e44ad',
+            tooltip: 'Demander la fiche technique à l’IA de Google',
+            open:    prompt => openGoogleSearch(prompt, true),
+        },
+        {
+            label:   'Claude',
+            colour:  '#d97757',
+            tooltip: 'Demander la fiche technique à Claude',
+            open:    prompt => openInNewTab(`https://claude.ai/new?${new URLSearchParams({ q: prompt }).toString()}`),
+        },
+        {
+            label:   'ChatGPT',
+            colour:  '#10a37f',
+            tooltip: 'Demander la fiche technique à ChatGPT',
+            open:    prompt => openInNewTab(`https://chatgpt.com/?${new URLSearchParams({ q: prompt }).toString()}`),
+        },
+    ];
+
+    const SPARKLE_PATH ='M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z';
 
     // Strip diacritics: "très bon état" -> "tres bon etat".
     // Precomposed French letters collapse to a single base letter, so offsets in
@@ -174,6 +236,28 @@
         return result.replace(/\s{2,}/g, ' ').trim();
     }
 
+    // Reduce a free-text fuel label to the only distinction that changes the
+    // technical sheet. Accents are stripped first: listings spell it
+    // "Électrique", "Electrique" and "electrique" indifferently.
+    function classifyPowertrain(label) {
+        if (!label) {
+            return 'unknown';
+        }
+        const text = deaccent(label).toLowerCase();
+        // Checked first: "hybride rechargeable" and "hybride essence
+        // electrique" both name one of the other two families
+        if (text.includes('hybri')) {
+            return 'hybrid';
+        }
+        if (text.includes('electri')) {
+            return 'electric';
+        }
+        if (/essence|diesel|gazole|gpl|gnv|bicarburation|ethanol|sans plomb/.test(text)) {
+            return 'thermal';
+        }
+        return 'unknown';
+    }
+
     // =====================================================================
     // SITE ADAPTERS
     // =====================================================================
@@ -221,34 +305,36 @@
         },
 
         // Each criteria block holds a label column then a value column
+        readCriterion(id) {
+            const container = document.querySelector(`[data-qa-id="${id}"]`);
+            if (!container || container.children.length < 2) {
+                return null;
+            }
+            const valueColumn = container.children[1];
+            // The title attribute carries the full text when the layout
+            // truncates it on screen
+            const titled = valueColumn.querySelector('p[title]');
+            const raw = titled
+                ? titled.getAttribute('title').trim()
+                : valueColumn.textContent.trim();
+            return raw || null;
+        },
+
         criteriaValues() {
-            const ids = [
+            return [
                 'criteria_item_u_car_model',
                 'criteria_item_regdate',
+                'criteria_item_fuel',
                 'criteria_item_gearbox',
                 'criteria_item_u_car_finition',
                 'criteria_item_u_car_version',
                 'criteria_item_horsepower',
                 'criteria_item_horse_power_din',
-            ];
-            const values = [];
-            for (const id of ids) {
-                const container = document.querySelector(`[data-qa-id="${id}"]`);
-                if (!container || container.children.length < 2) {
-                    continue;
-                }
-                const valueColumn = container.children[1];
-                // The title attribute carries the full text when the layout
-                // truncates it on screen
-                const titled = valueColumn.querySelector('p[title]');
-                const raw = titled
-                    ? titled.getAttribute('title').trim()
-                    : valueColumn.textContent.trim();
-                if (raw) {
-                    values.push(raw);
-                }
-            }
-            return values;
+            ].map(id => this.readCriterion(id)).filter(Boolean);
+        },
+
+        fuelLabel() {
+            return this.readCriterion('criteria_item_fuel');
         },
 
         // --- search results ---
@@ -301,12 +387,8 @@
 
         // Label/value pairs with hashed CSS-module class names. Matching on a
         // fragment survives the rebuilds that change those hashes.
-        criteriaValues() {
-            const wanted = [
-                'année', 'énergie', 'boîte', 'transmission',
-                'puissance din', 'puissance fiscale',
-            ];
-            const values = [];
+        // Walk the label/value grid, yielding the values whose label matches
+        *readLines(wanted) {
             for (const line of document.querySelectorAll('[class*="LabelItems_gridLine"]')) {
                 const labelEl = line.querySelector('[class*="LabelItems_itemLabelName"]');
                 const valueEl = line.querySelector('[class*="LabelItems_itemValue"]');
@@ -317,11 +399,24 @@
                 if (wanted.some(w => label.includes(w))) {
                     const raw = valueEl.textContent.trim();
                     if (raw) {
-                        values.push(raw);
+                        yield raw;
                     }
                 }
             }
-            return values;
+        },
+
+        criteriaValues() {
+            return [...this.readLines([
+                'année', 'énergie', 'boîte', 'transmission',
+                'puissance din', 'puissance fiscale',
+            ])];
+        },
+
+        fuelLabel() {
+            for (const value of this.readLines(['énergie', 'carburant'])) {
+                return value;
+            }
+            return null;
         },
 
         hasSearchPage: false,
@@ -460,9 +555,14 @@
         return extras.length > 0 ? `${cleanTitle} ${extras.join(' ')}` : cleanTitle;
     }
 
-    // Build the prompt sent to Google AI Mode to obtain the technical table
-    function buildAiPrompt(vehicle) {
-        const rows = AI_TABLE_ROWS
+    // Build the prompt asking an assistant for the technical table. The energy
+    // rows depend on the powertrain read off the listing.
+    function buildAiPrompt(vehicle, powertrain) {
+        const rows = [
+            ...AI_COMMON_ROWS,
+            ...(AI_ENERGY_ROWS[powertrain] || AI_ENERGY_ROWS.unknown),
+            AI_ARCHITECTURE_ROW,
+        ]
             .map((row, index) => `${index + 1}. ${row.label} (format : ${row.format}) → ${row.colours}`)
             .join('\n');
         return [
@@ -503,34 +603,35 @@
         return icon;
     }
 
-    // Create the Google AI Mode button returning a technical table
-    function createAiButton(title) {
+    // Create one assistant button returning a technical table
+    function createAiButton(source, title) {
         const button = document.createElement('button');
         button.type = 'button';
-        button.title = 'Demander la fiche technique à l’IA de Google';
+        button.title = source.tooltip;
         button.style.cssText = [
             'display:inline-flex',
             'align-items:center',
             'gap:4px',
             'margin-left:8px',
             'padding:2px 8px',
-            'border:1px solid #8e44ad',
+            `border:1px solid ${source.colour}`,
             'border-radius:12px',
             'background:#fff',
-            'color:#8e44ad',
+            `color:${source.colour}`,
             'font:bold 12px/1.4 Arial, sans-serif',
             'cursor:pointer',
             'flex-shrink:0',
         ].join(';');
 
-        const icon = createSVGIcon(SPARKLE_PATH, '#8e44ad', 14);
+        const icon = createSVGIcon(SPARKLE_PATH, source.colour, 14);
         icon.style.marginLeft = '0';
-        button.append(icon, document.createTextNode('Fiche IA'));
+        button.append(icon, document.createTextNode(source.label));
 
         bindClick(button, function() {
-            const prompt = buildAiPrompt(buildEnrichedQuery(title));
-            console.log('[SearchHelper] AI prompt:', prompt);
-            openGoogleSearch(prompt, true);
+            const powertrain = classifyPowertrain(site.fuelLabel());
+            const prompt = buildAiPrompt(buildEnrichedQuery(title), powertrain);
+            console.log(`[SearchHelper] ${source.label} (${powertrain}):`, prompt);
+            source.open(prompt);
         });
         return button;
     }
@@ -658,7 +759,9 @@
                 for (const source of SPEC_SHEET_SOURCES) {
                     container.appendChild(createSpecSheetIcon(source, adTitle));
                 }
-                container.appendChild(createAiButton(adTitle));
+                for (const source of AI_SOURCES) {
+                    container.appendChild(createAiButton(source, adTitle));
+                }
             } else {
                 container.appendChild(createGoogleIcon(adTitle));
                 if (site.showMarketplaces) {

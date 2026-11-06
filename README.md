@@ -2,7 +2,7 @@
 
 A userscript adding one-click price-comparison and spec-sheet shortcuts to classified ads on [leboncoin.fr](https://www.leboncoin.fr) and [lacentrale.fr](https://www.lacentrale.fr), right next to listing titles.
 
-[![Userscript](https://img.shields.io/badge/userscript-v3.0-blue)](ad-search-helper.user.js)
+[![Userscript](https://img.shields.io/badge/userscript-v3.1-blue)](ad-search-helper.user.js)
 [![License: MPL 2.0](https://img.shields.io/badge/license-MPL%202.0-brightgreen)](LICENSE)
 [![No dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)](#how-it-works)
 
@@ -32,8 +32,12 @@ Badges appear in front of the listing title. Which ones depends on what is being
 | `LC` | La Centrale spec sheet |
 | `EN` | Encycarpedia spec sheet |
 | `Fiche IA` | Google AI Mode, prompted for a colour-coded technical table |
+| `Claude` | Claude, with the same prompt |
+| `ChatGPT` | ChatGPT, with the same prompt |
 
-The query is enriched with criteria the title leaves out — model, year, gearbox, trim, fuel, power — read from the listing itself. On Leboncoin the "voir plus de critères" block is expanded first, since it hides half of them.
+The query is enriched with criteria the title leaves out — model, year, fuel, gearbox, trim, power — read from the listing itself.
+
+The three assistants receive an identical prompt, and **its energy rows follow the powertrain** read off the listing. Litres and kilowatt-hours have nothing to do with each other, and a fuel tank is meaningless on an electric car, so a petrol or diesel listing asks for L/100 km, a tank size and a full-tank range; an electric one asks for kWh/100 km, usable battery capacity, WLTP range and peak DC charging; a hybrid asks for both. When the listing does not say, the prompt lets the model pick the right unit rather than print one that cannot apply. On Leboncoin the "voir plus de critères" block is expanded first, since it hides half of them.
 
 ### Every other listing
 
@@ -72,7 +76,9 @@ Everything you are likely to change sits in the constants at the top of the scri
 | `PRODUCT_SEARCH_SOURCES` | Marketplaces shown on non-car listings |
 | `SPEC_SHEET_SOURCES` | Spec-sheet sources shown on car listings |
 | `QUERY_BLACKLIST` | Sales filler stripped from queries |
-| `AI_TABLE_ROWS` | Rows and colour thresholds requested from Google AI Mode |
+| `AI_COMMON_ROWS` | Rows requested whatever the powertrain |
+| `AI_ENERGY_ROWS` | Energy rows per powertrain: `thermal`, `electric`, `hybrid`, `unknown` |
+| `AI_SOURCES` | Assistants the prompt is sent to |
 
 Adding a marketplace takes one entry:
 
