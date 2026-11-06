@@ -2,7 +2,7 @@
 
 A userscript adding one-click price-comparison and spec-sheet shortcuts to classified ads on [leboncoin.fr](https://www.leboncoin.fr) and [lacentrale.fr](https://www.lacentrale.fr), right next to listing titles.
 
-[![Userscript](https://img.shields.io/badge/userscript-v3.3-blue)](ad-search-helper.user.js)
+[![Userscript](https://img.shields.io/badge/userscript-v3.4-blue)](ad-search-helper.user.js)
 [![License: MPL 2.0](https://img.shields.io/badge/license-MPL%202.0-brightgreen)](LICENSE)
 [![No dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)](#how-it-works)
 
@@ -33,9 +33,11 @@ Badges appear in front of the listing title. Which ones depends on what is being
 | `EN` | Encycarpedia spec sheet |
 | `Gemini` | Google's AI Mode, which is Gemini, prompted for a colour-coded technical table |
 | `Claude` | Claude, with the same prompt |
-| `ChatGPT` | ChatGPT, with the same prompt |
+| `ChatGPT` | ChatGPT, with the same prompt, in a temporary chat |
 
 The query is enriched with criteria the title leaves out — model, year, fuel, gearbox, trim, power — read from the listing itself.
+
+ChatGPT is opened with `temporary-chat=true`, so the conversation is not kept in its history. The parameter also makes the prompt send itself: without it ChatGPT stops at its home page with the question unsent. Gemini and Claude have no URL equivalent, so their chats follow whatever each account already does.
 
 The three assistants receive an identical prompt, and **its energy rows follow the powertrain** read off the listing. Litres and kilowatt-hours have nothing to do with each other, and a fuel tank is meaningless on an electric car, so a petrol or diesel listing asks for L/100 km, a tank size and a full-tank range; an electric one asks for kWh/100 km, usable battery capacity, WLTP range and peak DC charging; a hybrid asks for both. When the listing does not say, the prompt lets the model pick the right unit rather than print one that cannot apply. On Leboncoin the "voir plus de critères" block is expanded first, since it hides half of them.
 

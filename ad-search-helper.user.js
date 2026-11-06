@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Ad Search Helper
 // @namespace    http://tampermonkey.net/
-// @version      3.3
+// @version      3.4
 // @description  Ajoute des raccourcis de recherche sur les annonces Leboncoin et La Centrale : fiches techniques, Gemini, Claude, ChatGPT, eBay, Amazon et Google Shopping
 // @author       You
 // @match        https://www.leboncoin.fr/ad/*
@@ -171,13 +171,18 @@
             label:   'Claude',
             colour:  '#d97757',
             tooltip: 'Demander la fiche technique à Claude',
+            // Pas d'équivalent du mode temporaire : chez Claude il s'active par
+            // l'icône fantôme de l'interface, aucun paramètre d'URL ne le déclenche.
             open:    prompt => openInNewTab(`https://claude.ai/new?${new URLSearchParams({ q: prompt }).toString()}`),
         },
         {
             label:   'ChatGPT',
             colour:  '#10a37f',
-            tooltip: 'Demander la fiche technique à ChatGPT',
-            open:    prompt => openInNewTab(`https://chatgpt.com/?${new URLSearchParams({ q: prompt }).toString()}`),
+            tooltip: 'Demander la fiche technique à ChatGPT, en conversation temporaire',
+            // temporary-chat=true ouvre une conversation éphémère. Il fait aussi
+            // partir le prompt tout seul : sans lui, ChatGPT reste sur l'accueil
+            // et la question doit être validée à la main.
+            open:    prompt => openInNewTab(`https://chatgpt.com/?${new URLSearchParams({ 'temporary-chat': 'true', q: prompt }).toString()}`),
         },
     ];
 
