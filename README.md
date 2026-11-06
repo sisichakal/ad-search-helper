@@ -2,7 +2,7 @@
 
 A userscript adding one-click price-comparison and spec-sheet shortcuts to classified ads on [leboncoin.fr](https://www.leboncoin.fr) and [lacentrale.fr](https://www.lacentrale.fr), right next to listing titles.
 
-[![Userscript](https://img.shields.io/badge/userscript-v3.2-blue)](ad-search-helper.user.js)
+[![Userscript](https://img.shields.io/badge/userscript-v3.3-blue)](ad-search-helper.user.js)
 [![License: MPL 2.0](https://img.shields.io/badge/license-MPL%202.0-brightgreen)](LICENSE)
 [![No dependencies](https://img.shields.io/badge/dependencies-none-lightgrey)](#how-it-works)
 
@@ -31,7 +31,7 @@ Badges appear in front of the listing title. Which ones depends on what is being
 | `CA` | Caradisiac spec sheet |
 | `LC` | La Centrale spec sheet |
 | `EN` | Encycarpedia spec sheet |
-| `Gemini` | Gemini, prompted for a colour-coded technical table |
+| `Gemini` | Google's AI Mode, which is Gemini, prompted for a colour-coded technical table |
 | `Claude` | Claude, with the same prompt |
 | `ChatGPT` | ChatGPT, with the same prompt |
 

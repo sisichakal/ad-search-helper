@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Ad Search Helper
 // @namespace    http://tampermonkey.net/
-// @version      3.2
+// @version      3.3
 // @description  Ajoute des raccourcis de recherche sur les annonces Leboncoin et La Centrale : fiches techniques, Gemini, Claude, ChatGPT, eBay, Amazon et Google Shopping
 // @author       You
 // @match        https://www.leboncoin.fr/ad/*
@@ -125,6 +125,11 @@
         label: 'Architecture', format: 'type de motorisation / de moteur électrique', colours: '⚪ toujours',
     };
 
+    // Google "udm" parameter value that opens AI Mode instead of the classic
+    // results page. AI Mode is Gemini, and unlike gemini.google.com it accepts
+    // the prompt straight from the URL.
+    const GOOGLE_AI_MODE_UDM = '50';
+
     // Google "udm" parameter value that opens the Shopping tab
     const GOOGLE_SHOPPING_UDM = '28';
 
@@ -158,9 +163,9 @@
     const AI_SOURCES = [
         {
             label:   'Gemini',
-            colour:  '#9b72cb',
+            colour:  '#8e44ad',
             tooltip: 'Demander la fiche technique à Gemini',
-            open:    prompt => openInNewTab(`https://gemini.google.com/app?${new URLSearchParams({ q: prompt }).toString()}`),
+            open:    prompt => openGoogleSearch(prompt, true),
         },
         {
             label:   'Claude',
@@ -480,9 +485,13 @@
         window.open(url, '_blank', 'noopener');
     }
 
-    // Open a classic Google search in a new tab
-    function openGoogleSearch(query) {
-        openInNewTab(`https://www.google.com/search?${new URLSearchParams({ q: query }).toString()}`);
+    // Open a Google search in a new tab (classic results or AI Mode)
+    function openGoogleSearch(query, aiMode = false) {
+        const params = new URLSearchParams({ q: query });
+        if (aiMode) {
+            params.set('udm', GOOGLE_AI_MODE_UDM);
+        }
+        openInNewTab(`https://www.google.com/search?${params.toString()}`);
     }
 
     // Attach a click handler that blocks the default Leboncoin behaviour
