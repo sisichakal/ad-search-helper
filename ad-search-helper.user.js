@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Ad Search Helper
 // @namespace    http://tampermonkey.net/
-// @version      3.1
-// @description  Ajoute des raccourcis de recherche sur les annonces Leboncoin et La Centrale : fiches techniques, Google AI Mode, Claude, ChatGPT, eBay, Amazon et Google Shopping
+// @version      3.2
+// @description  Ajoute des raccourcis de recherche sur les annonces Leboncoin et La Centrale : fiches techniques, Gemini, Claude, ChatGPT, eBay, Amazon et Google Shopping
 // @author       You
 // @match        https://www.leboncoin.fr/ad/*
 // @match        https://www.leboncoin.fr/recherche*
@@ -125,9 +125,6 @@
         label: 'Architecture', format: 'type de motorisation / de moteur électrique', colours: '⚪ toujours',
     };
 
-    // Google "udm" parameter value that opens AI Mode instead of the classic results page
-    const GOOGLE_AI_MODE_UDM = '50';
-
     // Google "udm" parameter value that opens the Shopping tab
     const GOOGLE_SHOPPING_UDM = '28';
 
@@ -160,10 +157,10 @@
     // changes, so adding one is a single entry.
     const AI_SOURCES = [
         {
-            label:   'Fiche IA',
-            colour:  '#8e44ad',
-            tooltip: 'Demander la fiche technique à l’IA de Google',
-            open:    prompt => openGoogleSearch(prompt, true),
+            label:   'Gemini',
+            colour:  '#9b72cb',
+            tooltip: 'Demander la fiche technique à Gemini',
+            open:    prompt => openInNewTab(`https://gemini.google.com/app?${new URLSearchParams({ q: prompt }).toString()}`),
         },
         {
             label:   'Claude',
@@ -483,13 +480,9 @@
         window.open(url, '_blank', 'noopener');
     }
 
-    // Open a Google search in a new tab (classic results or AI Mode)
-    function openGoogleSearch(query, aiMode = false) {
-        const params = new URLSearchParams({ q: query });
-        if (aiMode) {
-            params.set('udm', GOOGLE_AI_MODE_UDM);
-        }
-        openInNewTab(`https://www.google.com/search?${params.toString()}`);
+    // Open a classic Google search in a new tab
+    function openGoogleSearch(query) {
+        openInNewTab(`https://www.google.com/search?${new URLSearchParams({ q: query }).toString()}`);
     }
 
     // Attach a click handler that blocks the default Leboncoin behaviour
